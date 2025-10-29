@@ -1,0 +1,7 @@
+# Don't upload these
+__pycache__/
+*.pyc
+.DS_Store
+.vscode/
+*.csv
+IMBD Dataset.csv
