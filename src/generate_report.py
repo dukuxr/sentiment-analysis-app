@@ -8,8 +8,14 @@ from openpyxl import load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 from openpyxl.utils import get_column_letter
 import os
+from pathlib import Path
 
-def create_excel_with_formulas(csv_file='algorithm_comparison_results.csv'):
+# Project paths
+BASE_DIR = Path(__file__).resolve().parent.parent
+RESULTS_DIR = BASE_DIR / "results"
+REPORTS_DIR = BASE_DIR / "reports"
+
+def create_excel_with_formulas(csv_file=None):
     """
     Create Excel report with formulas for dynamic calculations
     """
@@ -19,6 +25,11 @@ def create_excel_with_formulas(csv_file='algorithm_comparison_results.csv'):
     print("="*70)
     
     # Check if CSV exists
+    if csv_file is None:
+        csv_file = RESULTS_DIR / "algorithm_comparison_results.csv"
+    else:
+        csv_file = Path(csv_file)
+
     if not os.path.exists(csv_file):
         print(f"\n[ERROR] Cannot find {csv_file}")
         print("Please run the comparison analysis first!")
@@ -28,7 +39,8 @@ def create_excel_with_formulas(csv_file='algorithm_comparison_results.csv'):
     df_results = pd.read_csv(csv_file)
     
     # Create Excel writer
-    output_file = 'Thesis_Report_With_Formulas.xlsx'
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    output_file = REPORTS_DIR / "Thesis_Report_With_Formulas.xlsx"
     
     with pd.ExcelWriter(output_file, engine='openpyxl') as writer:
         
@@ -379,10 +391,12 @@ INSTRUCTIONS:
 ================================================================================
     """
     
-    with open('Abstract_Template.txt', 'w') as f:
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    template_path = REPORTS_DIR / "Abstract_Template.txt"
+    with open(template_path, 'w') as f:
         f.write(template)
     
-    print("\n[SUCCESS] Created: Abstract_Template.txt")
+    print(f"\n[SUCCESS] Created: {template_path}")
 
 
 if __name__ == "__main__":
@@ -404,5 +418,5 @@ if __name__ == "__main__":
     print("ALL FILES CREATED!")
     print("="*70)
     print(f"\n1. {excel_file}")
-    print("2. Abstract_Template.txt")
+    print(f"2. {REPORTS_DIR / 'Abstract_Template.txt'}")
     print("\nYou're ready to fill in your congress abstract! 🎉")

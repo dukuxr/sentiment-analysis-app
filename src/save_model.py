@@ -5,6 +5,7 @@ Run this ONCE after training your model
 
 import pandas as pd
 import pickle
+from pathlib import Path
 from sklearn.model_selection import train_test_split
 from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
@@ -12,6 +13,11 @@ from sklearn.svm import LinearSVC
 import re
 from nltk.corpus import stopwords
 import nltk
+
+# Project paths
+BASE_DIR = Path(__file__).resolve().parent.parent
+DATA_DIR = BASE_DIR / "data"
+MODELS_DIR = BASE_DIR / "models"
 
 # Download stopwords if needed
 try:
@@ -38,7 +44,7 @@ class ModelSaver:
         text = ' '.join([word for word in words if word not in self.stop_words])
         return text
     
-    def train_and_save(self, csv_file='IMBD Dataset.csv', model_type='logistic'):
+    def train_and_save(self, csv_file=None, model_type='logistic'):
         """Train model and save it"""
         
         print("="*70)
@@ -47,6 +53,11 @@ class ModelSaver:
         
         # Load data
         print("\n1. Loading dataset...")
+        if csv_file is None:
+            csv_file = DATA_DIR / "IMBD Dataset.csv"
+        else:
+            csv_file = Path(csv_file)
+
         df = pd.read_csv(csv_file)
         print(f"   Loaded {len(df):,} reviews")
         
@@ -94,18 +105,22 @@ class ModelSaver:
         
         # Save model
         print("\n7. Saving model files...")
-        
+
+        MODELS_DIR.mkdir(parents=True, exist_ok=True)
+
         try:
-            with open('model.pkl', 'wb') as f:
+            model_path = MODELS_DIR / "model.pkl"
+            with open(model_path, 'wb') as f:
                 pickle.dump(self.model, f)
-            print("   [SUCCESS] Saved: model.pkl")
+            print(f"   [SUCCESS] Saved: {model_path}")
         except Exception as e:
             print(f"   [ERROR] Could not save model.pkl: {e}")
         
         try:
-            with open('vectorizer.pkl', 'wb') as f:
+            vectorizer_path = MODELS_DIR / "vectorizer.pkl"
+            with open(vectorizer_path, 'wb') as f:
                 pickle.dump(self.vectorizer, f)
-            print("   [SUCCESS] Saved: vectorizer.pkl")
+            print(f"   [SUCCESS] Saved: {vectorizer_path}")
         except Exception as e:
             print(f"   [ERROR] Could not save vectorizer.pkl: {e}")
         
@@ -118,9 +133,10 @@ class ModelSaver:
         }
         
         try:
-            with open('model_metadata.pkl', 'wb') as f:
+            metadata_path = MODELS_DIR / "model_metadata.pkl"
+            with open(metadata_path, 'wb') as f:
                 pickle.dump(metadata, f)
-            print("   [SUCCESS] Saved: model_metadata.pkl")
+            print(f"   [SUCCESS] Saved: {metadata_path}")
         except Exception as e:
             print(f"   [ERROR] Could not save model_metadata.pkl: {e}")
         
@@ -128,9 +144,9 @@ class ModelSaver:
         print("MODEL SAVED SUCCESSFULLY!")
         print("="*70)
         print("\nFiles created:")
-        print("  1. model.pkl          - Trained model")
-        print("  2. vectorizer.pkl     - TF-IDF vectorizer")
-        print("  3. model_metadata.pkl - Model information")
+        print(f"  1. {MODELS_DIR / 'model.pkl'}          - Trained model")
+        print(f"  2. {MODELS_DIR / 'vectorizer.pkl'}     - TF-IDF vectorizer")
+        print(f"  3. {MODELS_DIR / 'model_metadata.pkl'} - Model information")
         print("\nYou can now use these in your Streamlit app!")
         
         return test_acc
@@ -141,7 +157,7 @@ if __name__ == "__main__":
     
     # Train and save Logistic Regression (88.30% accuracy)
     print("\nTraining Logistic Regression model...")
-    accuracy = saver.train_and_save('IMBD Dataset.csv', model_type='logistic')
+    accuracy = saver.train_and_save(model_type='logistic')
     
     print(f"\n🎉 Model ready for web app with {accuracy*100:.2f}% accuracy!")
     print("\nNext step: Update your Streamlit app to use these files.")

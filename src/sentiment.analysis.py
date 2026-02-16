@@ -22,6 +22,7 @@ from sklearn.metrics import (accuracy_score, precision_score, recall_score,
                              f1_score, classification_report, confusion_matrix)
 import warnings
 warnings.filterwarnings('ignore')
+from pathlib import Path
 
 # NLTK for text processing
 import nltk
@@ -32,6 +33,12 @@ except LookupError:
     
 from nltk.corpus import stopwords
 
+# Project paths
+BASE_DIR = Path(__file__).resolve().parent.parent
+DATA_DIR = BASE_DIR / "data"
+FIGURES_DIR = BASE_DIR / "figures"
+RESULTS_DIR = BASE_DIR / "results"
+
 
 class SentimentAnalyzer:
     """Complete sentiment analysis system with multiple algorithms"""
@@ -40,6 +47,7 @@ class SentimentAnalyzer:
         self.vectorizer = TfidfVectorizer(max_features=5000)
         self.models = {}
         self.results = []
+        self.seeded_results = []
         self.stop_words = set(stopwords.words('english'))
         
     def preprocess_text(self, text):
@@ -59,11 +67,33 @@ class SentimentAnalyzer:
         df['clean_text'] = df[text_column].apply(self.preprocess_text)
         
         if df[label_column].dtype == 'object':
-            unique_labels = df[label_column].unique()
-            label_map = {unique_labels[0]: 0, unique_labels[1]: 1}
-            df['label'] = df[label_column].map(label_map)
+            normalized = df[label_column].astype(str).str.strip().str.lower()
+            label_map = {
+                'negative': 0,
+                'neg': 0,
+                '0': 0,
+                'false': 0,
+                'positive': 1,
+                'pos': 1,
+                '1': 1,
+                'true': 1,
+            }
+            df['label'] = normalized.map(label_map)
+
+            unknown_labels = sorted(normalized[df['label'].isna()].unique().tolist())
+            if unknown_labels:
+                raise ValueError(
+                    "Unexpected sentiment labels found: "
+                    f"{unknown_labels}. Expected positive/negative (or 1/0)."
+                )
         else:
-            df['label'] = df[label_column]
+            numeric_labels = pd.to_numeric(df[label_column], errors='coerce')
+            if numeric_labels.isna().any():
+                raise ValueError("Numeric label column contains non-numeric values.")
+
+            if not set(numeric_labels.unique().tolist()).issubset({0, 1, 0.0, 1.0}):
+                raise ValueError("Numeric label column must contain only 0 and 1 values.")
+            df['label'] = numeric_labels.astype(int)
         
         return df
     
@@ -137,6 +167,52 @@ class SentimentAnalyzer:
             self.train_and_evaluate(X_train, X_test, y_train, y_test, name, model)
         
         return self.results
+
+    def evaluate_algorithms_with_seeds(self, X, y, seeds, test_size=0.2):
+        """Evaluate algorithms across multiple random seeds using split per seed"""
+        algorithms = {
+            'Logistic Regression': lambda seed: LogisticRegression(max_iter=1000, random_state=seed),
+            'Naive Bayes': lambda seed: MultinomialNB(),
+            'Support Vector Machine': lambda seed: LinearSVC(random_state=seed, max_iter=1000),
+            'Random Forest': lambda seed: RandomForestClassifier(
+                n_estimators=100, random_state=seed, n_jobs=-1
+            ),
+            'Decision Tree': lambda seed: DecisionTreeClassifier(random_state=seed)
+        }
+
+        self.seeded_results = []
+
+        print("\n" + "="*70)
+        print("SEED-BASED EVALUATION")
+        print("="*70)
+
+        for seed in seeds:
+            X_train, X_test, y_train, y_test = train_test_split(
+                X, y, test_size=test_size, random_state=seed, stratify=y
+            )
+            vectorizer = TfidfVectorizer(max_features=5000)
+            X_train_vec = vectorizer.fit_transform(X_train)
+            X_test_vec = vectorizer.transform(X_test)
+
+            for name, model_factory in algorithms.items():
+                model = model_factory(seed)
+
+                model.fit(X_train_vec, y_train)
+                y_pred = model.predict(X_test_vec)
+
+                accuracy = accuracy_score(y_test, y_pred)
+                f1 = f1_score(y_test, y_pred, average='weighted')
+
+                self.seeded_results.append({
+                    'Algorithm': name,
+                    'Seed': seed,
+                    'Accuracy': accuracy,
+                    'F1': f1
+                })
+
+                print(f"{name} | Seed {seed} | Accuracy: {accuracy:.4f} | F1: {f1:.4f}")
+
+        return self.seeded_results
     
     def generate_comparison_table(self):
         """Generate comparison table of all algorithms"""
@@ -173,8 +249,10 @@ class SentimentAnalyzer:
                     ha='center', va='bottom', fontweight='bold')
         
         plt.tight_layout()
-        plt.savefig('accuracy_comparison.png', dpi=300, bbox_inches='tight')
-        print("\n[SAVED] accuracy_comparison.png")
+        FIGURES_DIR.mkdir(parents=True, exist_ok=True)
+        output_path = FIGURES_DIR / "accuracy_comparison.png"
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        print(f"\n[SAVED] {output_path}")
         plt.show()
     
     def plot_metrics_comparison(self):
@@ -202,8 +280,10 @@ class SentimentAnalyzer:
         ax.set_ylim(0, 100)
         
         plt.tight_layout()
-        plt.savefig('metrics_comparison.png', dpi=300, bbox_inches='tight')
-        print("[SAVED] metrics_comparison.png")
+        FIGURES_DIR.mkdir(parents=True, exist_ok=True)
+        output_path = FIGURES_DIR / "metrics_comparison.png"
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        print(f"[SAVED] {output_path}")
         plt.show()
     
     def plot_time_comparison(self):
@@ -231,8 +311,10 @@ class SentimentAnalyzer:
         ax2.grid(axis='y', alpha=0.3)
         
         plt.tight_layout()
-        plt.savefig('time_comparison.png', dpi=300, bbox_inches='tight')
-        print("[SAVED] time_comparison.png")
+        FIGURES_DIR.mkdir(parents=True, exist_ok=True)
+        output_path = FIGURES_DIR / "time_comparison.png"
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        print(f"[SAVED] {output_path}")
         plt.show()
     
     def plot_confusion_matrices(self, y_test):
@@ -259,19 +341,86 @@ class SentimentAnalyzer:
             axes[5].axis('off')
         
         plt.tight_layout()
-        plt.savefig('confusion_matrices.png', dpi=300, bbox_inches='tight')
-        print("[SAVED] confusion_matrices.png")
+        FIGURES_DIR.mkdir(parents=True, exist_ok=True)
+        output_path = FIGURES_DIR / "confusion_matrices.png"
+        plt.savefig(output_path, dpi=300, bbox_inches='tight')
+        print(f"[SAVED] {output_path}")
         plt.show()
     
     def save_results_to_csv(self):
         """Save results to CSV for thesis"""
         df_results = pd.DataFrame(self.results)
         df_results = df_results.drop('Predictions', axis=1)
-        df_results.to_csv('algorithm_comparison_results.csv', index=False)
-        print("\n[SAVED] algorithm_comparison_results.csv")
+        RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+        output_path = RESULTS_DIR / "algorithm_comparison_results.csv"
+        df_results.to_csv(output_path, index=False)
+        print(f"\n[SAVED] {output_path}")
+
+    def save_seeded_results_to_csv(self, df_results, filename="seeded_algorithm_results.csv"):
+        """Save seeded evaluation results to CSV"""
+        RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+        output_path = RESULTS_DIR / filename
+        df_results.to_csv(output_path, index=False)
+        print(f"\n[SAVED] {output_path}")
+
+    def export_error_examples_lr(self, df_raw, seeds=[0], test_size=0.2, n_fp=10, n_fn=10):
+        """Export top FP/FN error examples for Logistic Regression"""
+        RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+
+        for seed in seeds:
+            train_idx, test_idx = train_test_split(
+                df_raw.index, test_size=test_size, random_state=seed, stratify=df_raw['label']
+            )
+
+            X_train = df_raw.loc[train_idx, 'clean_text']
+            y_train = df_raw.loc[train_idx, 'label']
+            X_test = df_raw.loc[test_idx, 'clean_text']
+            y_test = df_raw.loc[test_idx, 'label']
+
+            vectorizer = TfidfVectorizer(max_features=5000)
+            X_train_vec = vectorizer.fit_transform(X_train)
+            X_test_vec = vectorizer.transform(X_test)
+
+            model = LogisticRegression(max_iter=1000, random_state=seed)
+            model.fit(X_train_vec, y_train)
+            y_pred = model.predict(X_test_vec)
+            prob_pos = model.predict_proba(X_test_vec)[:, 1]
+
+            df_test = pd.DataFrame({
+                'Algorithm': 'Logistic Regression',
+                'Seed': seed,
+                'review_raw': df_raw.loc[test_idx, 'review'].values,
+                'review_clean': X_test.values,
+                'true_label': y_test.values,
+                'pred_label': y_pred,
+                'prob_pos': prob_pos
+            })
+
+            df_test['error_type'] = 'Correct'
+            df_test.loc[(df_test['true_label'] == 0) & (df_test['pred_label'] == 1), 'error_type'] = 'FP'
+            df_test.loc[(df_test['true_label'] == 1) & (df_test['pred_label'] == 0), 'error_type'] = 'FN'
+
+            df_errors = df_test[df_test['error_type'].isin(['FP', 'FN'])]
+            df_fp = df_errors[df_errors['error_type'] == 'FP'].sort_values(
+                'prob_pos', ascending=False
+            ).head(n_fp)
+            df_fn = df_errors[df_errors['error_type'] == 'FN'].sort_values(
+                'prob_pos', ascending=True
+            ).head(n_fn)
+
+            df_export = pd.concat([df_fp, df_fn], ignore_index=True)
+            output_path = RESULTS_DIR / f"error_analysis_lr_seed{seed}.csv"
+            df_export.to_csv(output_path, index=False)
+
+            total_fp = (df_errors['error_type'] == 'FP').sum()
+            total_fn = (df_errors['error_type'] == 'FN').sum()
+            print(
+                f"Seed {seed} | test_size={test_size} | total FP={total_fp} | "
+                f"total FN={total_fn} | saved: {output_path}"
+            )
 
 
-def run_complete_comparison(filepath='IMBD Dataset.csv'):
+def run_complete_comparison(filepath=None):
     """Run complete comparative analysis"""
     
     print("="*70)
@@ -281,6 +430,11 @@ def run_complete_comparison(filepath='IMBD Dataset.csv'):
     
     # Load dataset
     print("\n1. Loading IMDB dataset...")
+    if filepath is None:
+        filepath = DATA_DIR / "IMBD Dataset.csv"
+    else:
+        filepath = Path(filepath)
+
     try:
         df = pd.read_csv(filepath)
         print(f"[SUCCESS] Dataset loaded!")
@@ -303,62 +457,35 @@ def run_complete_comparison(filepath='IMBD Dataset.csv'):
     df = analyzer.prepare_data(df, 'review', 'sentiment')
     print("[SUCCESS] Data preprocessed!")
     
-    # Split data
-    X_train, X_test, y_train, y_test = train_test_split(
-        df['clean_text'], df['label'], 
-        test_size=0.2, random_state=42, stratify=df['label']
-    )
-    print(f"\n[SUCCESS] Training samples: {len(X_train):,}")
-    print(f"[SUCCESS] Testing samples: {len(X_test):,}")
-    
-    # Compare all algorithms
-    print("\n3. Training and comparing all algorithms...")
+    # Seed-based evaluation
+    print("\n3. Evaluating algorithms across multiple seeds...")
     print("   (This may take 3-5 minutes...)")
-    results = analyzer.compare_all_algorithms(X_train, X_test, y_train, y_test)
-    
-    # Generate comparison table
-    print("\n4. Generating comparison results...")
-    df_comparison = analyzer.generate_comparison_table()
-    
-    # Find best algorithm
-    best_algo = df_comparison.loc[df_comparison['Accuracy'].idxmax()]
-    print(f"\n{'='*70}")
-    print("BEST PERFORMING ALGORITHM")
-    print(f"{'='*70}")
-    print(f"Algorithm: {best_algo['Algorithm']}")
-    print(f"Accuracy:  {best_algo['Accuracy']:.2f}%")
-    print(f"Precision: {best_algo['Precision']:.2f}%")
-    print(f"Recall:    {best_algo['Recall']:.2f}%")
-    print(f"F1-Score:  {best_algo['F1-Score']:.2f}%")
-    
-    # Generate all visualizations
-    print(f"\n{'='*70}")
-    print("5. Generating visualizations for thesis...")
-    print(f"{'='*70}")
-    
-    analyzer.plot_accuracy_comparison()
-    analyzer.plot_metrics_comparison()
-    analyzer.plot_time_comparison()
-    analyzer.plot_confusion_matrices(y_test)
-    
+    seeded_results = analyzer.evaluate_algorithms_with_seeds(
+        df['clean_text'], df['label'], seeds=[0, 1, 2, 3, 4]
+    )
+
+    # Build results table
+    print("\n4. Building results table...")
+    df_seeded = pd.DataFrame(seeded_results)
+    df_seeded = df_seeded.sort_values(['Algorithm', 'Seed']).reset_index(drop=True)
+    print(df_seeded.to_string(index=False))
+
     # Save results
-    analyzer.save_results_to_csv()
-    
+    analyzer.save_seeded_results_to_csv(df_seeded)
+
+    # Step 4: Error analysis export
+    analyzer.export_error_examples_lr(df, seeds=[0], n_fp=10, n_fn=10)
+
     print(f"\n{'='*70}")
     print("ANALYSIS COMPLETE!")
     print(f"{'='*70}")
     print("\nGenerated files for your thesis:")
-    print("  1. accuracy_comparison.png")
-    print("  2. metrics_comparison.png")
-    print("  3. time_comparison.png")
-    print("  4. confusion_matrices.png")
-    print("  5. algorithm_comparison_results.csv")
-    print("\nAll files are saved in the current directory.")
-    print("You can use these directly in your thesis!")
-    
-    return analyzer, df_comparison
+    print(f"  1. {RESULTS_DIR / 'seeded_algorithm_results.csv'}")
+    print("\nAll files are saved in the results folder.")
+
+    return analyzer, df_seeded
 
 
 # Run the complete comparison
 if __name__ == "__main__":
-    analyzer, results = run_complete_comparison('IMBD Dataset.csv')
+    analyzer, results = run_complete_comparison()

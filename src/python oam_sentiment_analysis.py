@@ -8,6 +8,12 @@ import numpy as np
 from openpyxl import Workbook, load_workbook
 from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
 import re
+from pathlib import Path
+
+# Project paths
+BASE_DIR = Path(__file__).resolve().parent.parent
+DATA_DIR = BASE_DIR / "data"
+REPORTS_DIR = BASE_DIR / "reports"
 
 class COCOExporter:
     """
@@ -45,7 +51,7 @@ class COCOExporter:
         
         return attributes
     
-    def create_oam_for_coco(self, csv_file='IMBD Dataset.csv', n_samples=50, output_file='OAM_for_COCO.xlsx'):
+    def create_oam_for_coco(self, csv_file=None, n_samples=50, output_file=None):
         """
         Create OAM matrix and export in COCO format
         """
@@ -55,6 +61,17 @@ class COCOExporter:
         print("="*70)
         
         # Load dataset
+        if csv_file is None:
+            csv_file = DATA_DIR / "IMBD Dataset.csv"
+        else:
+            csv_file = Path(csv_file)
+
+        if output_file is None:
+            REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+            output_file = REPORTS_DIR / "OAM_for_COCO.xlsx"
+        else:
+            output_file = Path(output_file)
+
         print(f"\n1. Loading dataset from {csv_file}...")
         try:
             df = pd.read_csv(csv_file)
@@ -382,9 +399,7 @@ if __name__ == "__main__":
     n_samples = 50
     
     oam_df, ranked_df, correlations = exporter.create_oam_for_coco(
-        csv_file='IMBD Dataset.csv',
-        n_samples=n_samples,
-        output_file='OAM_for_COCO.xlsx'
+        n_samples=n_samples
     )
     
     print("\n" + "="*70)
