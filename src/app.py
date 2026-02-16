@@ -85,6 +85,21 @@ except FileNotFoundError:
         """
     )
     model, vectorizer, metadata = None, None, None
+except ModuleNotFoundError as exc:
+    st.error(
+        f"""
+        Model compatibility error while loading pickle files.
+
+        Missing module: `{exc}`.
+
+        Your deployed dependency versions do not match the versions used to serialize
+        `models/model.pkl` and `models/vectorizer.pkl`.
+        """
+    )
+    st.stop()
+except Exception as exc:
+    st.error(f"Unexpected error while loading model files: {exc}")
+    st.stop()
 
 # Initialize session state
 if 'analysis_history' not in st.session_state:
